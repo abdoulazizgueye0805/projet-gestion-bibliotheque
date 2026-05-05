@@ -1,110 +1,150 @@
 <?php
 // ============================================================
 // index.php
-// Point d'entrée de l'application.
-// Ce fichier utilise les trois classes pour simuler
-// le fonctionnement d'une bibliothèque.
+// Point d'entrée de l'application avec connexion MySQL.
 // ============================================================
 
-require_once 'classes/Bibliotheque.php'; 
-// Bibliotheque charge Livre et Membre automatiquement
+// Connexion à la base
+$host = "localhost";
+$dbname = "bibliothequepoo";
+$username = "root";   // adapte selon ton environnement
+$password = "";
+
+try {
+    $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8", $username, $password);
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+} catch (PDOException $e) {
+    die("❌ Erreur de connexion : " . $e->getMessage());
+}
 
 // --- 1. Création de la bibliothèque ---
-$biblio = new Bibliotheque("Bibliothèque Centrale ISI");
+$nomBibliotheque = "Bibliothèque Centrale ISI";
+$pdo->exec("INSERT IGNORE INTO bibliotheques (nom) VALUES ('$nomBibliotheque')");
 
 echo "<!DOCTYPE html>
 <html lang='fr'>
 <head>
     <meta charset='UTF-8'>
-    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
     <title>Bibliothèque ISI</title>
     <link rel='stylesheet' href='assets/css/style.css'>
 </head>
 <body>
 <header>
-    <h1>📚 {$biblio->getNom()}</h1>
+    <h1>📚 $nomBibliotheque</h1>
 </header>
 <main>";
 
 // --- 2. Ajout des livres ---
 echo "<section><h2><a href=\"classes/ajouter_livre.php\" style=\"text-decoration:none; color:inherit;\">➕ Ajout des livres</a></h2></section>";
 
-$l1 = new Livre("Le Petit Prince", "Antoine de Saint-Exupéry");
-$l2 = new Livre("1984", "George Orwell");
-$l3 = new Livre("Les Misérables", "Victor Hugo");
-$l4 = new Livre("L'Étranger", "Albert Camus");
-$l5 = new Livre("Germinal", "Émile Zola");
+$livres = [
+    ["Le Petit Prince", "Antoine de Saint-Exupéry"],
+    ["1984", "George Orwell"],
+    ["Les Misérables", "Victor Hugo"],
+    ["L'Étranger", "Albert Camus"],
+    ["Germinal", "Émile Zola"]
+];
 
-$biblio->ajouterLivre($l1);
-$biblio->ajouterLivre($l2);
-$biblio->ajouterLivre($l3);
-$biblio->ajouterLivre($l4);
-$biblio->ajouterLivre($l5);
+foreach ($livres as [$titre, $auteur]) {
+    $stmt = $pdo->prepare("INSERT IGNORE INTO livres (titre, auteur, disponible) VALUES (?, ?, TRUE)");
+    $stmt->execute([$titre, $auteur]);
+}
 
 echo "</section>";
 
 // --- 3. Inscription des membres ---
 echo "<section><h2>👤 Inscription des membres</h2>";
 
-$m1 = new Membre("Ndiaye", "Amadou");
-$m2 = new Membre("Sow", "Mariama");
-$m3 = new Membre("Sarr", "Ibrahima");
+$membres = [
+    ["Ndiaye", "Amadou"],
+    ["Sow", "Mariama"],
+    ["Sarr", "Ibrahima"]
+];
 
-$biblio->inscrireMembre($m1);
-$biblio->inscrireMembre($m2);
-$biblio->inscrireMembre($m3);
+foreach ($membres as [$nom, $prenom]) {
+    $stmt = $pdo->prepare("INSERT IGNORE INTO membres (nom, prenom) VALUES (?, ?)");
+    $stmt->execute([$nom, $prenom]);
+}
 
 echo "</section>";
 
 // --- 4. Emprunts ---
 echo "<section><h2>📤 Emprunts</h2>";
+
 try {
-    $m1->emprunterLivre($l1); // Amadou emprunte Le Petit Prince
-    $m1->emprunterLivre($l2); // Amadou emprunte 1984
-    $m2->emprunterLivre($l3); // Mariama emprunte Les Misérables
-    $m2->emprunterLivre($l1); // ❌ déjà emprunté → exception attendue
+    // Amadou emprunte Le Petit Prince
+    $pdo->exec("INSERT INTO emprunts (membre_nom, membre_prenom, livre_titre) VALUES ('Ndiaye','Amadou','Le Petit Prince')");
+    $pdo->exec("UPDATE livres SET disponible = FALSE WHERE titre='Le Petit Prince'");
+
+    // Amadou emprunte 1984
+    $pdo->exec("INSERT INTO emprunts (membre_nom, membre_prenom, livre_titre) VALUES ('Ndiaye','Amadou','1984')");
+    $pdo->exec("UPDATE livres SET disponible = FALSE WHERE titre='1984'");
+
+    // Mariama emprunte Les Misérables
+    $pdo->exec("INSERT INTO emprunts (membre_nom, membre_prenom, livre_titre) VALUES ('Sow','Mariama','Les Misérables')");
+    $pdo->exec("UPDATE livres SET disponible = FALSE WHERE titre='Les Misérables'");
+
+    // Mariama essaie d’emprunter Le Petit Prince (déjà pris → erreur attendue)
+    $dispo = $pdo->query("SELECT disponible FROM livres WHERE titre='Le Petit Prince'")->fetchColumn();
+    if (!$dispo) {
+        throw new Exception("Le Petit Prince est déjà emprunté.");
+    }
 } catch (Exception $e) {
     echo "<p class='erreur'>⚠️ " . $e->getMessage() . "</p>";
 }
 echo "</section>";
 
 // --- 5. Catalogue après emprunts ---
-echo "<section>";
-$biblio->afficherLivres();
-echo "</section>";
+echo "<section><h2>📖 Catalogue</h2>";
+$stmt = $pdo->query("SELECT titre, auteur, disponible FROM livres");
+echo "<table><tr><th>Titre</th><th>Auteur</th><th>Statut</th></tr>";
+foreach ($stmt as $livre) {
+    $statut = $livre['disponible'] ? "Disponible" : "Emprunté";
+    echo "<tr><td>{$livre['titre']}</td><td>{$livre['auteur']}</td><td>{$statut}</td></tr>";
+}
+echo "</table></section>";
 
 // --- 6. Livres disponibles ---
-echo "<section>";
-$biblio->afficherLivresDisponibles();
+echo "<section><h2>📖 Livres disponibles</h2>";
+$stmt = $pdo->query("SELECT titre, auteur FROM livres WHERE disponible=TRUE");
+foreach ($stmt as $livre) {
+    echo "<p>{$livre['titre']} — {$livre['auteur']}</p>";
+}
 echo "</section>";
 
 // --- 7. Retour d'un livre ---
 echo "<section><h2>📥 Retours</h2>";
-try {
-    $m1->retournerLivre($l1); // Amadou retourne Le Petit Prince
-} catch (Exception $e) {
-    echo "<p class='erreur'>⚠️ " . $e->getMessage() . "</p>";
-}
+$pdo->exec("UPDATE emprunts SET date_retour=CURRENT_DATE WHERE membre_nom='Ndiaye' AND membre_prenom='Amadou' AND livre_titre='Le Petit Prince' AND date_retour IS NULL");
+$pdo->exec("UPDATE livres SET disponible=TRUE WHERE titre='Le Petit Prince'");
+echo "<p class='succes'>Amadou a retourné Le Petit Prince</p>";
 echo "</section>";
 
 // --- 8. Retrait du catalogue ---
 echo "<section><h2>🗑️ Retrait du catalogue</h2>";
-try {
-    $biblio->retirerLivre("Germinal"); // disponible → succès attendu
-    $biblio->retirerLivre("1984");     // emprunté → exception attendue
-} catch (Exception $e) {
-    echo "<p class='erreur'>⚠️ " . $e->getMessage() . "</p>";
+$pdo->exec("DELETE FROM livres WHERE titre='Germinal' AND disponible=TRUE");
+$dispo = $pdo->query("SELECT disponible FROM livres WHERE titre='1984'")->fetchColumn();
+if (!$dispo) {
+    echo "<p class='erreur'>⚠️ Impossible de retirer 1984 : il est emprunté.</p>";
 }
 echo "</section>";
 
 // --- 9. État final ---
-echo "<section>";
-$biblio->afficherLivres();
+echo "<section><h2>📖 État final du catalogue</h2>";
+$stmt = $pdo->query("SELECT titre, auteur, disponible FROM livres");
+foreach ($stmt as $livre) {
+    $statut = $livre['disponible'] ? "Disponible" : "Emprunté";
+    echo "<p>{$livre['titre']} — {$livre['auteur']} ({$statut})</p>";
+}
 echo "</section>";
 
 // --- 10. Récapitulatif des membres ---
-echo "<section>";
-$biblio->afficherMembres();
+echo "<section><h2>👥 Membres inscrits</h2>";
+$stmt = $pdo->query("SELECT m.prenom, m.nom, e.livre_titre, e.date_emprunt, e.date_retour
+                     FROM membres m
+                     LEFT JOIN emprunts e ON m.nom=e.membre_nom AND m.prenom=e.membre_prenom");
+foreach ($stmt as $row) {
+    echo "<p>{$row['prenom']} {$row['nom']} — Livre : {$row['livre_titre']} (Emprunté le {$row['date_emprunt']}, Retour : {$row['date_retour']})</p>";
+}
 echo "</section>";
 
 echo "</main>
