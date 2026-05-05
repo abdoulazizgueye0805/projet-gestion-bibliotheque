@@ -1,21 +1,19 @@
 <?php
-// ============================================================
-// classes/Bibliotheque.php
-// Classe principale : gère les livres et les membres.
-// ============================================================
-
 require_once 'Livre.php';
 require_once 'Membre.php';
 
 class Bibliotheque
 {
     private string $nom;
-    private array $livres = [];   // collection de tous les livres
-    private array $membres = [];  // liste de tous les membres inscrits
+    private PDO $pdo;
+    private array $livres = [];   // [titre => Livre]
+    private array $membres = [];  // [prenom|nom => Membre]
 
-    public function __construct(string $nom)
+    public function __construct(string $nom, PDO $pdo)
     {
         $this->nom = $nom;
+        $this->pdo = $pdo;
+        $this->chargerDepuisBase();
     }
 
     public function getNom(): string
@@ -23,90 +21,126 @@ class Bibliotheque
         return $this->nom;
     }
 
-    // --------------------------------------------------------
-    // GESTION DES LIVRES
-    // --------------------------------------------------------
-
-   public function ajouterLivre(Livre $livre): void
-{
-    // Vérifier si le livre existe déjà (par titre)
-    foreach ($this->livres as $existant) {
-        if (strtolower($existant->getTitre()) === strtolower($livre->getTitre())) {
-            echo "<p class='erreur'>❌ Le livre <em>{$livre->getTitre()}</em> existe déjà dans la bibliothèque.</p>";
-            return; // on arrête la méthode, pas d'ajout
+    public function ajouterLivre(Livre $livre): void
+    {
+        $titreKey = mb_strtolower($livre->getTitre());
+        if (isset($this->livres[$titreKey])) {
+            throw new Exception("Le livre \"{$livre->getTitre()}\" existe déjà dans la bibliothèque.");
         }
+
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO livres (titre, auteur, disponible) VALUES (:titre, :auteur, 1)'
+        );
+        $stmt->execute([
+            ':titre' => $livre->getTitre(),
+            ':auteur' => $livre->getAuteur(),
+        ]);
+
+        $livre->setDisponible(true);
+        $this->livres[$titreKey] = $livre;
     }
 
-    // Sinon, on ajoute le livre
-    $this->livres[] = $livre;
-    echo "<p class='info'>📚 Livre ajouté : <em>{$livre->getTitre()}</em></p>";
-}
-
-
-    public function retirerLivre(string $titre): void
+    public function inscrireMembre(Membre $membre): void
     {
-        $livre = $this->rechercherLivre($titre);
-
-        if (!$livre->estDisponible()) {
-            throw new Exception("Impossible de retirer \"{$titre}\" : il est actuellement emprunté.");
+        $key = $this->membreKey($membre->getPrenom(), $membre->getNom());
+        if (isset($this->membres[$key])) {
+            throw new Exception("Le membre {$membre->getNomComplet()} existe déjà.");
         }
 
-        $this->livres = array_values(
-            array_filter($this->livres, fn($l) => $l->getTitre() !== $titre)
-        );
+        $stmt = $this->pdo->prepare('INSERT INTO membres (nom, prenom) VALUES (:nom, :prenom)');
+        $stmt->execute([
+            ':nom' => $membre->getNom(),
+            ':prenom' => $membre->getPrenom(),
+        ]);
 
-        echo "<p class='info'>🗑️ Livre retiré : <em>{$titre}</em></p>";
+        $this->membres[$key] = $membre;
     }
 
     public function rechercherLivre(string $titre): Livre
     {
-        foreach ($this->livres as $livre) {
-            if (strtolower($livre->getTitre()) === strtolower($titre)) {
-                return $livre;
-            }
+        $key = mb_strtolower($titre);
+        if (!isset($this->livres[$key])) {
+            throw new Exception("Livre introuvable : \"{$titre}\".");
         }
-        throw new Exception("Livre introuvable : \"{$titre}\".");
+        return $this->livres[$key];
     }
 
-    // --------------------------------------------------------
-    // GESTION DES MEMBRES
-    // --------------------------------------------------------
-
-    public function inscrireMembre(Membre $membre): void
+    public function getMembre(string $prenom, string $nom): Membre
     {
-        $this->membres[] = $membre;
-        echo "<p class='info'>👤 Membre inscrit : <em>{$membre->getNomComplet()}</em></p>";
+        $key = $this->membreKey($prenom, $nom);
+        if (!isset($this->membres[$key])) {
+            throw new Exception("Membre introuvable : {$prenom} {$nom}.");
+        }
+        return $this->membres[$key];
     }
 
-    // --------------------------------------------------------
-    // AFFICHAGE
-    // --------------------------------------------------------
-
-    public function afficherLivres(): void
+    public function enregistrerEmprunt(string $titreLivre, string $prenom, string $nom): void
     {
-        echo "<h2>📖 Catalogue — {$this->nom}</h2>";
+        $livre = $this->rechercherLivre($titreLivre);
+        $membre = $this->getMembre($prenom, $nom);
 
-        if (empty($this->livres)) {
-            echo "<p class='vide'>Aucun livre dans la bibliothèque.</p>";
-            return;
-        }
+        $membre->emprunterLivre($livre);
 
-        echo "<table>";
-        echo "<thead><tr><th>Titre</th><th>Auteur</th><th>Statut</th></tr></thead>";
-        echo "<tbody>";
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO emprunts (membre_nom, membre_prenom, livre_titre, date_emprunt, date_retour)
+             VALUES (:nom, :prenom, :titre, CURDATE(), NULL)'
+        );
+        $stmt->execute([
+            ':nom' => $nom,
+            ':prenom' => $prenom,
+            ':titre' => $livre->getTitre(),
+        ]);
 
-        foreach ($this->livres as $livre) {
-            $statut = $livre->estDisponible() ? "Disponible" : "Emprunté";
-            $classe = $livre->estDisponible() ? "disponible" : "emprunte";
+        $this->pdo
+            ->prepare('UPDATE livres SET disponible = 0 WHERE LOWER(titre) = LOWER(:titre)')
+            ->execute([':titre' => $livre->getTitre()]);
+    }
 
-            echo "<tr>";
-            echo "<td>{$livre->getTitre()}</td>";
-            echo "<td>{$livre->getAuteur()}</td>";
-            echo "<td class='{$classe}'>{$statut}</td>";
-            echo "</tr>";
-        }
+    public function enregistrerRetour(string $titreLivre, string $prenom, string $nom): void
+    {
+        $livre = $this->rechercherLivre($titreLivre);
+        $membre = $this->getMembre($prenom, $nom);
 
-        echo "</tbody></table>";
+        $membre->retournerLivre($livre);
+
+        $stmt = $this->pdo->prepare(
+            'UPDATE emprunts
+             SET date_retour = CURDATE()
+             WHERE membre_nom = :nom
+               AND membre_prenom = :prenom
+               AND livre_titre = :titre
+               AND date_retour IS NULL'
+        );
+        $stmt->execute([
+            ':nom' => $nom,
+            ':prenom' => $prenom,
+            ':titre' => $livre->getTitre(),
+        ]);
+
+        $this->pdo
+            ->prepare('UPDATE livres SET disponible = 1 WHERE LOWER(titre) = LOWER(:titre)')
+            ->execute([':titre' => $livre->getTitre()]);
+    }
+
+    public function getLivres(): array
+    {
+        return $this->livres;
+    }
+
+    public function getMembres(): array
+    {
+        return $this->membres;
+    }
+
+    public function getEmpruntsActifs(): array
+    {
+        $stmt = $this->pdo->query(
+            'SELECT membre_prenom, membre_nom, livre_titre, date_emprunt
+             FROM emprunts
+             WHERE date_retour IS NULL
+             ORDER BY date_emprunt DESC'
+        );
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     public function afficherMembres(): void
@@ -118,41 +152,85 @@ class Bibliotheque
             return;
         }
 
+        $empruntsParMembre = $this->getEmpruntsActifsParMembre();
+
         foreach ($this->membres as $membre) {
             echo "<div class='membre-carte'>";
             echo "<strong>{$membre->getNomComplet()}</strong>";
 
-            $emprunts = $membre->getLivresEmpruntes();
+            $key = $this->membreKey($membre->getPrenom(), $membre->getNom());
+            $emprunts = $empruntsParMembre[$key] ?? [];
 
             if (empty($emprunts)) {
                 echo "<p>Aucun emprunt en cours.</p>";
             } else {
                 echo "<ul>";
-                foreach ($emprunts as $livre) {
-                    echo "<li>{$livre->getTitre()} — {$livre->getAuteur()}</li>";
+                foreach ($emprunts as $emprunt) {
+                    echo "<li>{$emprunt['livre_titre']}</li>";
                 }
                 echo "</ul>";
             }
-
             echo "</div>";
         }
     }
 
-    public function afficherLivresDisponibles(): void
+    private function chargerDepuisBase(): void
     {
-        $disponibles = array_filter($this->livres, fn($l) => $l->estDisponible());
+        $this->livres = [];
+        $this->membres = [];
 
-        echo "<h2>📖 Livres disponibles</h2>";
+        $livresRows = $this->pdo->query(
+            'SELECT titre, auteur, disponible FROM livres ORDER BY titre ASC'
+        )->fetchAll(PDO::FETCH_ASSOC);
 
-        if (empty($disponibles)) {
-            echo "<p class='vide'>Tous les livres sont actuellement empruntés.</p>";
-            return;
+        foreach ($livresRows as $row) {
+            $livre = new Livre($row['titre'], $row['auteur']);
+            $livre->setDisponible((int) $row['disponible'] === 1);
+            $this->livres[mb_strtolower($row['titre'])] = $livre;
         }
 
-        echo "<ul>";
-        foreach ($disponibles as $livre) {
-            echo "<li>{$livre->getTitre()} — {$livre->getAuteur()}</li>";
+        $membresRows = $this->pdo->query(
+            'SELECT nom, prenom FROM membres ORDER BY prenom ASC, nom ASC'
+        )->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($membresRows as $row) {
+            $membre = new Membre($row['nom'], $row['prenom']);
+            $this->membres[$this->membreKey($row['prenom'], $row['nom'])] = $membre;
         }
-        echo "</ul>";
+
+        $actifs = $this->pdo->query(
+            'SELECT membre_nom, membre_prenom, livre_titre FROM emprunts WHERE date_retour IS NULL'
+        )->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($actifs as $row) {
+            $livreKey = mb_strtolower($row['livre_titre']);
+            $membreKey = $this->membreKey($row['membre_prenom'], $row['membre_nom']);
+            if (isset($this->livres[$livreKey], $this->membres[$membreKey])) {
+                $this->livres[$livreKey]->setDisponible(false);
+                $this->membres[$membreKey]->hydraterEmpruntActif($this->livres[$livreKey]);
+            }
+        }
+    }
+
+    private function membreKey(string $prenom, string $nom): string
+    {
+        return mb_strtolower(trim($prenom) . '|' . trim($nom));
+    }
+
+    private function getEmpruntsActifsParMembre(): array
+    {
+        $rows = $this->pdo->query(
+            'SELECT membre_prenom, membre_nom, livre_titre
+             FROM emprunts
+             WHERE date_retour IS NULL'
+        )->fetchAll(PDO::FETCH_ASSOC);
+
+        $result = [];
+        foreach ($rows as $row) {
+            $key = $this->membreKey($row['membre_prenom'], $row['membre_nom']);
+            $result[$key][] = $row;
+        }
+
+        return $result;
     }
 }

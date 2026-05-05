@@ -3,81 +3,68 @@
 // classes/Membre.php
 // Représente un membre inscrit à la bibliothèque.
 // Un membre peut emprunter jusqu'à 3 livres en même temps.
+// Historique des emprunts conservé avec date.
 // ============================================================
 
-require_once 'Livre.php'; // Membre a besoin de connaître la classe Livre
+require_once 'Livre.php';
 
 class Membre
 {
+    private ?int $id;
     private string $nom;
     private string $prenom;
 
-    // $livresEmpruntes est un tableau d'objets Livre
-    // Il stocke tous les livres actuellement empruntés par ce membre.
-    private array $livresEmpruntes = [];
+    private array $livresEmpruntes = [];   // Livres actuellement empruntés
+    private array $historique = [];        // Historique de tous les emprunts
 
-    // Limite maximale de livres empruntables simultanément
     private const MAX_EMPRUNTS = 3;
 
-    public function __construct(string $nom, string $prenom)
+    public function __construct(string $nom, string $prenom, ?int $id = null)
     {
+        $this->id = $id;
         $this->nom = $nom;
         $this->prenom = $prenom;
     }
 
     // --- Getters ---
-    public function getNom(): string
-    {
-        return $this->nom;
-    }
+    public function getId(): ?int { return $this->id; }
+    public function setId(int $id): void { $this->id = $id; }
+    public function getNom(): string { return $this->nom; }
+    public function getPrenom(): string { return $this->prenom; }
+    public function getLivresEmpruntes(): array { return $this->livresEmpruntes; }
+    public function getNomComplet(): string { return $this->prenom . ' ' . $this->nom; }
 
-    public function getPrenom(): string
+    // Retourne l’historique complet des emprunts
+    public function getHistorique(): array
     {
-        return $this->prenom;
-    }
-
-    // Retourne le tableau de tous les livres empruntés
-    public function getLivresEmpruntes(): array
-    {
-        return $this->livresEmpruntes;
-    }
-
-    // Retourne le nom complet du membre (prénom + nom)
-    public function getNomComplet(): string
-    {
-        return $this->prenom . ' ' . $this->nom;
+        return $this->historique;
     }
 
     // --- Méthodes d'action ---
-    // Emprunter un livre : vérifie les conditions avant d'agir
     public function emprunterLivre(Livre $livre): void
     {
-        // Condition 1 : le membre n'a pas dépassé sa limite
         if (count($this->livresEmpruntes) >= self::MAX_EMPRUNTS) {
-            throw new Exception(
-                "{$this->getNomComplet()} a atteint la limite de " .
-                self::MAX_EMPRUNTS . " emprunts."
-            );
+            throw new Exception("{$this->getNomComplet()} a atteint la limite de " . self::MAX_EMPRUNTS . " emprunts.");
         }
 
-        // Condition 2 : le livre est disponible (Livre::emprunter() lève une exception sinon)
         $livre->emprunter();
-        // Si le livre est déjà emprunté, une exception est levée ici
 
-        // Si tout va bien, on ajoute le livre au tableau des emprunts du membre
         $this->livresEmpruntes[] = $livre;
+
+        // Ajout dans l’historique avec date
+        $this->historique[] = [
+            'titre' => $livre->getTitre(),
+            'auteur' => $livre->getAuteur(),
+            'date' => date('d/m/Y')
+        ];
 
         echo "<p class='succes'>
                 {$this->getNomComplet()} a emprunté <em>{$livre->getTitre()}</em>.
               </p>";
     }
 
-    // Retourner un livre : le retire de la liste des emprunts du membre
     public function retournerLivre(Livre $livre): void
     {
-        // array_filter parcourt le tableau et garde uniquement les livres
-        // dont le titre est DIFFÉRENT du livre retourné.
-        // On utilise array_values pour réindexer le tableau après le filtre.
         $this->livresEmpruntes = array_values(
             array_filter(
                 $this->livresEmpruntes,
@@ -85,11 +72,66 @@ class Membre
             )
         );
 
-        // On signale au livre qu'il est de nouveau disponible
         $livre->retourner();
 
         echo "<p class='succes'>↩️
                 {$this->getNomComplet()} a retourné <em>{$livre->getTitre()}</em>.
               </p>";
+    }
+
+    public function hydraterEmpruntActif(Livre $livre): void
+    {
+        $this->livresEmpruntes[] = $livre;
+    }
+}
+
+class Reservation
+{
+    private Membre $membre;
+    private Livre $livre;
+    private string $dateReservation;
+    private bool $active = true; // réservation active tant que non signalée
+
+    public function __construct(Membre $membre, Livre $livre)
+    {
+        if ($livre->estDisponible()) {
+            throw new Exception("Le livre \"{$livre->getTitre()}\" est disponible, inutile de le réserver.");
+        }
+
+        $this->membre = $membre;
+        $this->livre = $livre;
+        $this->dateReservation = date('d/m/Y');
+
+        echo "<p class='info'>📌 Réservation créée : 
+                <em>{$livre->getTitre()}</em> pour {$membre->getNomComplet()} 
+                le {$this->dateReservation}.
+              </p>";
+    }
+
+    public function getMembre(): Membre
+    {
+        return $this->membre;
+    }
+
+    public function getLivre(): Livre
+    {
+        return $this->livre;
+    }
+
+    public function estActive(): bool
+    {
+        return $this->active;
+    }
+
+    // Méthode appelée quand le livre est retourné
+    public function signalerRetour(): void
+    {
+        if ($this->active) {
+            $this->active = false;
+            echo "<p class='succes'>✅ 
+                    Réservation signalée : <em>{$this->livre->getTitre()}</em> 
+                    est maintenant disponible pour {$this->membre->getNomComplet()}.
+                  </p>";
+        }
     }
 }

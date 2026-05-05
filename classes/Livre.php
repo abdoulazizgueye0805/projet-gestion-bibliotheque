@@ -1,73 +1,103 @@
 <?php
 // ============================================================
 // classes/Livre.php
-// Représente un livre dans la bibliothèque.
-// Chaque livre a un titre, un auteur, et un état de disponibilité.
+// Classe de base : Livre
 // ============================================================
 
 class Livre
 {
-    // Attributs privés : on ne peut pas les modifier directement
-    // depuis l'extérieur de la classe. On passe obligatoirement
-    // par les méthodes définies ci-dessous.
-    private string $titre;
-    private string $auteur;
-    private bool $disponible; // true = disponible, false = emprunté
+    protected ?int $id;
+    protected string $titre;
+    protected string $auteur;
+    protected bool $disponible;
 
-    // Le constructeur est appelé automatiquement lors du new Livre(...)
-    // Il initialise les attributs dès la création de l'objet.
-    public function __construct(string $titre, string $auteur)
+    public function __construct(string $titre, string $auteur, ?int $id = null)
     {
+        $this->id = $id;
         $this->titre = $titre;
         $this->auteur = $auteur;
-        $this->disponible = true; // un livre est disponible par défaut à l'ajout
+        $this->disponible = true;
     }
 
-    // --- Getters : permettent de LIRE les attributs privés ---
-    // Retourne le titre du livre
-    public function getTitre(): string
-    {
-        return $this->titre;
-    }
+    public function getId(): ?int { return $this->id; }
+    public function setId(int $id): void { $this->id = $id; }
+    public function getTitre(): string { return $this->titre; }
+    public function getAuteur(): string { return $this->auteur; }
+    public function estDisponible(): bool { return $this->disponible; }
+    public function setDisponible(bool $disponible): void { $this->disponible = $disponible; }
 
-    // Retourne le nom de l'auteur
-    public function getAuteur(): string
-    {
-        return $this->auteur;
-    }
-
-    // Retourne true si le livre est disponible, false sinon
-    public function estDisponible(): bool
-    {
-        return $this->disponible;
-    }
-
-    // --- Méthodes d'action : modifient l'état du livre ---
-    // Marque le livre comme emprunté (disponible = false)
-    // Lève une exception si le livre est déjà emprunté
     public function emprunter(): void
     {
         if (!$this->disponible) {
-            // throw crée une exception : si personne ne la "attrape",
-            // le programme s'arrête avec un message d'erreur.
             throw new Exception("Le livre \"{$this->titre}\" est déjà emprunté.");
         }
         $this->disponible = false;
     }
 
-    // Marque le livre comme retourné (disponible = true)
     public function retourner(): void
     {
         $this->disponible = true;
     }
 
-    // Retourne une représentation textuelle du livre
-    // Utile pour l'affichage dans les listes
     public function __toString(): string
     {
         $statut = $this->disponible ? "Disponible" : "Emprunté";
         return "\"{$this->titre}\" — {$this->auteur} [{$statut}]";
     }
+}
 
-    
+// ============================================================
+// Sous-classe LivrePhysique : hérite de Livre
+// ============================================================
+
+class LivrePhysique extends Livre
+{
+    // Comportement identique à Livre (un seul exemplaire)
+    // On peut ajouter des attributs spécifiques (ex: localisation, état physique)
+    private string $emplacement;
+
+    public function __construct(string $titre, string $auteur, string $emplacement)
+    {
+        parent::__construct($titre, $auteur);
+        $this->emplacement = $emplacement;
+    }
+
+    public function getEmplacement(): string
+    {
+        return $this->emplacement;
+    }
+}
+
+// ============================================================
+// Sous-classe LivreNumerique : hérite de Livre
+// ============================================================
+
+class LivreNumerique extends Livre
+{
+    // Un livre numérique peut être emprunté par plusieurs membres
+    // donc on ignore la disponibilité unique
+    public function __construct(string $titre, string $auteur)
+    {
+        parent::__construct($titre, $auteur);
+        $this->disponible = true; // toujours considéré disponible
+    }
+
+    // Redéfinition : pas de limite d'emprunt
+    public function emprunter(): void
+    {
+        // Pas de changement d'état : reste toujours disponible
+        // On peut juste signaler l'emprunt
+        echo "<p class='info'>💻 Livre numérique emprunté : <em>{$this->titre}</em> — {$this->auteur}</p>";
+    }
+
+    public function retourner(): void
+    {
+        // Rien à faire, car le numérique reste disponible
+        echo "<p class='info'>💻 Livre numérique rendu (mais reste disponible).</p>";
+    }
+
+    public function estDisponible(): bool
+    {
+        return true; // toujours disponible
+    }
 }

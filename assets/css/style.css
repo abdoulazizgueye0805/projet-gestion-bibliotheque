@@ -4,6 +4,15 @@
    ============================================================ */
 
 /* --- Base --- */
+:root {
+    --primary: #003087;
+    --primary-soft: #e8eaf6;
+    --accent: #003087;
+    --surface: #ffffff;
+    --surface-soft: #fafbfd;
+    --text: #263238;
+}
+
 * {
     box-sizing: border-box;
     margin: 0;
@@ -12,17 +21,18 @@
 
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background-color: #f0f4f8;
-    color: #333;
+    background: radial-gradient(circle at top right, #eef2ff 0%, #f3f6fb 35%, #eef3f9 100%);
+    color: var(--text);
     line-height: 1.6;
 }
 
 /* --- En-tête --- */
 header {
-    background: linear-gradient(135deg, #1a237e, #283593);
+    background: linear-gradient(135deg, #0d133f, #1a237e 45%, #3949ab);
     color: white;
     text-align: center;
-    padding: 2rem;
+    padding: 2.2rem 1rem;
+    box-shadow: 0 8px 22px rgba(26, 35, 126, 0.3);
 }
 
 header h1 {
@@ -32,22 +42,23 @@ header h1 {
 
 /* --- Contenu principal --- */
 main {
-    max-width: 900px;
+    max-width: 1050px;
     margin: 2rem auto;
-    padding: 0 1rem;
+    padding: 0 1.1rem;
 }
 
 section {
-    background: white;
-    border-radius: 10px;
+    background: var(--surface);
+    border-radius: 14px;
     padding: 1.5rem;
     margin-bottom: 1.5rem;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    border: 1px solid #e5e9f3;
+    box-shadow: 0 6px 18px rgba(17, 24, 39, 0.06);
 }
 
 section h2 {
-    color: #1a237e;
-    border-bottom: 2px solid #e8eaf6;
+    color: var(--primary);
+    border-bottom: 2px solid var(--primary-soft);
     padding-bottom: 0.5rem;
     margin-bottom: 1rem;
     font-size: 1.2rem;
@@ -89,26 +100,31 @@ p.vide {
 /* --- Tableau catalogue --- */
 table {
     width: 100%;
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0;
     margin-top: 0.5rem;
+    overflow: hidden;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
 }
 
 thead {
-    background-color: #1a237e;
+    background: #003087;
     color: white;
 }
 
 th, td {
     padding: 0.7rem 1rem;
     text-align: left;
+    border-bottom: 1px solid #edf2f7;
 }
 
 tbody tr:nth-child(even) {
-    background-color: #f5f5f5;
+    background-color: #f8fafc;
 }
 
 tbody tr:hover {
-    background-color: #e8eaf6;
+    background-color: #eef2ff;
 }
 
 td.disponible {
@@ -124,10 +140,10 @@ td.emprunte {
 /* --- Cartes membres --- */
 .membre-carte {
     border: 1px solid #e0e0e0;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 1rem;
     margin-bottom: 0.8rem;
-    background: #fafafa;
+    background: #fcfcff;
 }
 
 .membre-carte strong {
@@ -142,15 +158,115 @@ td.emprunte {
     color: #555;
 }
 
+/* --- Formulaires --- */
+.form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1rem;
+}
+
+.card-form {
+    border: 1px solid #e0e0e0;
+    border-radius: 12px;
+    background: var(--surface-soft);
+    padding: 1.1rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.card-form h3 {
+    color: #1a237e;
+    margin-bottom: 0.8rem;
+}
+
+label {
+    display: block;
+    font-weight: 600;
+    margin: 0.5rem 0 0.3rem;
+}
+
+input,
+select {
+    width: 100%;
+    border: 1px solid #c5cae9;
+    border-radius: 5px;
+    padding: 10px;
+    margin-bottom: 0.5rem;
+    background: #fff;
+}
+
+input:focus,
+select:focus {
+    border-color: #3f51b5;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(63, 81, 181, 0.12);
+}
+
+button,
+.action-link {
+    display: inline-block;
+    border: none;
+    border-radius: 5px;
+    padding: 0.5rem 0.9rem;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    color: #fff;
+    text-decoration: none;
+    cursor: pointer;
+    font-weight: 600;
+    transition: 0.3s;
+}
+
+button:hover,
+.action-link:hover {
+    background: #2e7d32;
+    transform: translateY(-1px);
+}
+
+button:active,
+.action-link:active {
+    transform: translateY(0);
+}
+
+.form-grid-inline {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.8rem;
+}
+
+.inline-form {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.inline-form select,
+.inline-form button {
+    margin: 0;
+}
+
 /* --- Pied de page --- */
 footer {
     text-align: center;
-    color: #999;
+    color: #6b7280;
     font-size: 0.85rem;
     padding: 2rem;
-    border-top: 1px solid #e0e0e0;
+    border-top: 1px solid #dbe2ea;
     margin-top: 2rem;
+    background: rgba(255, 255, 255, 0.45);
 }
 
-/* 
+@media (max-width: 768px) {
+    header h1 {
+        font-size: 1.55rem;
+    }
+
+    section {
+        padding: 1rem;
+    }
+
+    th, td {
+        padding: 0.55rem 0.6rem;
+        font-size: 0.92rem;
+    }
+}
 
