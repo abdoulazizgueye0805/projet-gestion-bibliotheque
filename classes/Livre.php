@@ -1,73 +1,81 @@
 <?php
 // ============================================================
 // classes/Livre.php
-// Représente un livre dans la bibliothèque.
-// Chaque livre a un titre, un auteur, et un état de disponibilité.
+// Représente un livre dans la bibliothèque avec PDO.
 // ============================================================
 
 class Livre
 {
-    // Attributs privés : on ne peut pas les modifier directement
-    // depuis l'extérieur de la classe. On passe obligatoirement
-    // par les méthodes définies ci-dessous.
     private string $titre;
     private string $auteur;
-    private bool $disponible; // true = disponible, false = emprunté
+    private bool $disponible;
+    private PDO $pdo;
 
-    // Le constructeur est appelé automatiquement lors du new Livre(...)
-    // Il initialise les attributs dès la création de l'objet.
-    public function __construct(string $titre, string $auteur)
+    // Le constructeur initialise les attributs et reçoit la connexion PDO
+    public function __construct(string $titre, string $auteur, PDO $pdo)
     {
         $this->titre = $titre;
         $this->auteur = $auteur;
-        $this->disponible = true; // un livre est disponible par défaut à l'ajout
+        $this->pdo = $pdo;
+
+        // Vérifier si le livre existe déjà en BD
+        $stmt = $this->pdo->prepare("SELECT disponible FROM livres WHERE titre = ?");
+        $stmt->execute([$titre]);
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($result) {
+            // Si le livre existe déjà, on récupère son état
+            $this->disponible = (bool)$result['disponible'];
+        } else {
+            // Sinon, on l’insère comme disponible par défaut
+            $this->disponible = true;
+            $stmt = $this->pdo->prepare("INSERT INTO livres (titre, auteur, disponible) VALUES (?, ?, TRUE)");
+            $stmt->execute([$titre, $auteur]);
+        }
     }
 
-    // --- Getters : permettent de LIRE les attributs privés ---
-    // Retourne le titre du livre
+    // --- Getters ---
     public function getTitre(): string
     {
         return $this->titre;
     }
 
-    // Retourne le nom de l'auteur
     public function getAuteur(): string
     {
         return $this->auteur;
     }
 
-    // Retourne true si le livre est disponible, false sinon
     public function estDisponible(): bool
     {
         return $this->disponible;
     }
 
-    // --- Méthodes d'action : modifient l'état du livre ---
-    // Marque le livre comme emprunté (disponible = false)
-    // Lève une exception si le livre est déjà emprunté
+    // --- Méthodes d’action ---
     public function emprunter(): void
     {
         if (!$this->disponible) {
-            // throw crée une exception : si personne ne la "attrape",
-            // le programme s'arrête avec un message d'erreur.
             throw new Exception("Le livre \"{$this->titre}\" est déjà emprunté.");
         }
+
+        // Mise à jour en BD
+        $stmt = $this->pdo->prepare("UPDATE livres SET disponible = FALSE WHERE titre = ?");
+        $stmt->execute([$this->titre]);
+
         $this->disponible = false;
     }
 
-    // Marque le livre comme retourné (disponible = true)
     public function retourner(): void
     {
+        // Mise à jour en BD
+        $stmt = $this->pdo->prepare("UPDATE livres SET disponible = TRUE WHERE titre = ?");
+        $stmt->execute([$this->titre]);
+
         $this->disponible = true;
     }
 
-    // Retourne une représentation textuelle du livre
-    // Utile pour l'affichage dans les listes
     public function __toString(): string
     {
         $statut = $this->disponible ? "Disponible" : "Emprunté";
         return "\"{$this->titre}\" — {$this->auteur} [{$statut}]";
     }
-
-    
 }
