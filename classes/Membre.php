@@ -1,28 +1,29 @@
 <?php
 // ============================================================
 // classes/Membre.php
-// Représente un membre inscrit à la bibliothèque.
-// Un membre peut emprunter jusqu'à 3 livres en même temps.
+// Représente un membre inscrit à la bibliothèque avec PDO.
 // ============================================================
 
-require_once 'Livre.php'; // Membre a besoin de connaître la classe Livre
+require_once 'Livre.php';
 
 class Membre
 {
     private string $nom;
     private string $prenom;
-
-    // $livresEmpruntes est un tableau d'objets Livre
-    // Il stocke tous les livres actuellement empruntés par ce membre.
-    private array $livresEmpruntes = [];
+    private PDO $pdo;
 
     // Limite maximale de livres empruntables simultanément
     private const MAX_EMPRUNTS = 3;
 
-    public function __construct(string $nom, string $prenom)
+    public function __construct(string $nom, string $prenom, PDO $pdo)
     {
         $this->nom = $nom;
         $this->prenom = $prenom;
+        $this->pdo = $pdo;
+
+        // Inscrire le membre en BD s'il n'existe pas déjà
+        $stmt = $this->pdo->prepare("INSERT IGNORE INTO membres (nom, prenom) VALUES (?, ?)");
+        $stmt->execute([$nom, $prenom]);
     }
 
     // --- Getters ---
@@ -36,60 +37,55 @@ class Membre
         return $this->prenom;
     }
 
-    // Retourne le tableau de tous les livres empruntés
-    public function getLivresEmpruntes(): array
-    {
-        return $this->livresEmpruntes;
-    }
-
-    // Retourne le nom complet du membre (prénom + nom)
     public function getNomComplet(): string
     {
         return $this->prenom . ' ' . $this->nom;
     }
 
-    // --- Méthodes d'action ---
-    // Emprunter un livre : vérifie les conditions avant d'agir
-    public function emprunterLivre(Livre $livre): void
+    // Retourne les livres empruntés par ce membre (depuis la BD)
+    public function getLivresEmpruntes(): array
     {
-        // Condition 1 : le membre n'a pas dépassé sa limite
-        if (count($this->livresEmpruntes) >= self::MAX_EMPRUNTS) {
-            throw new Exception(
-                "{$this->getNomComplet()} a atteint la limite de " .
-                self::MAX_EMPRUNTS . " emprunts."
-            );
-        }
-
-        // Condition 2 : le livre est disponible (Livre::emprunter() lève une exception sinon)
-        $livre->emprunter();
-        // Si le livre est déjà emprunté, une exception est levée ici
-
-        // Si tout va bien, on ajoute le livre au tableau des emprunts du membre
-        $this->livresEmpruntes[] = $livre;
-
-        echo "<p class='succes'>
-                {$this->getNomComplet()} a emprunté <em>{$livre->getTitre()}</em>.
-              </p>";
+        $stmt = $this->pdo->prepare("SELECT livre_titre FROM emprunts WHERE membre_nom=? AND membre_prenom=? AND date_retour IS NULL");
+        $stmt->execute([$this->nom, $this->prenom]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    // Retourner un livre : le retire de la liste des emprunts du membre
+    // --- Méthodes d'action ---
+    public function emprunterLivre(Livre $livre): void
+    {
+        // Condition 1 : vérifier la limite
+        $stmt = $this->pdo->prepare("SELECT COUNT(*) FROM emprunts WHERE membre_nom=? AND membre_prenom=? AND date_retour IS NULL");
+        $stmt->execute([$this->nom, $this->prenom]);
+        $nbEmprunts = $stmt->fetchColumn();
+
+        if ($nbEmprunts >= self::MAX_EMPRUNTS) {
+            throw new Exception("{$this->getNomComplet()} a atteint la limite de " . self::MAX_EMPRUNTS . " emprunts.");
+        }
+
+        // Condition 2 : vérifier disponibilité du livre
+        if (!$livre->estDisponible()) {
+            throw new Exception("Le livre \"{$livre->getTitre()}\" est déjà emprunté.");
+        }
+
+        // Enregistrer l’emprunt
+        $stmt = $this->pdo->prepare("INSERT INTO emprunts (membre_nom, membre_prenom, livre_titre, date_emprunt) VALUES (?, ?, ?, CURRENT_DATE)");
+        $stmt->execute([$this->nom, $this->prenom, $livre->getTitre()]);
+
+        // Mettre à jour l’état du livre
+        $livre->emprunter();
+
+        echo "<p class='succes'>{$this->getNomComplet()} a emprunté <em>{$livre->getTitre()}</em>.</p>";
+    }
+
     public function retournerLivre(Livre $livre): void
     {
-        // array_filter parcourt le tableau et garde uniquement les livres
-        // dont le titre est DIFFÉRENT du livre retourné.
-        // On utilise array_values pour réindexer le tableau après le filtre.
-        $this->livresEmpruntes = array_values(
-            array_filter(
-                $this->livresEmpruntes,
-                fn($l) => $l->getTitre() !== $livre->getTitre()
-            )
-        );
+        // Mettre à jour l’emprunt en BD
+        $stmt = $this->pdo->prepare("UPDATE emprunts SET date_retour=CURRENT_DATE WHERE membre_nom=? AND membre_prenom=? AND livre_titre=? AND date_retour IS NULL");
+        $stmt->execute([$this->nom, $this->prenom, $livre->getTitre()]);
 
-        // On signale au livre qu'il est de nouveau disponible
+        // Mettre à jour l’état du livre
         $livre->retourner();
 
-        echo "<p class='succes'>↩️
-                {$this->getNomComplet()} a retourné <em>{$livre->getTitre()}</em>.
-              </p>";
+        echo "<p class='succes'>↩️ {$this->getNomComplet()} a retourné <em>{$livre->getTitre()}</em>.</p>";
     }
 }
